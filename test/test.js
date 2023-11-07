@@ -38,9 +38,7 @@ describe("JamoProtocol", function () {
     return { owner, traderOne, traderTwo, liquidityProviderOne, liquidityProviderTwo, USDCContract, JamoProtocolContract, VaultContract };
   }
 
-  describe("Deployment", function () {
-    let JamoProtocol;
-    let Vault;
+  describe("Protocol operations", function () {
     it("Should set vault contract address ", async function () {
       // const { owner, traderOne, traderTwo, liquidityProviderOne, liquidityProviderTwo, USDCContract, JamoProtocolContract, VaultContract } = await loadFixture(deployContractFixture);
       // JamoProtocol = JamoProtocolContract;
@@ -80,22 +78,76 @@ describe("JamoProtocol", function () {
       const contractDetails = await JamoProtocolContract.getProtocolDetails();
       const userPosition = await JamoProtocolContract.getPositionByAddressAndIndex(traderOne.address, 0);
       expect((+userPosition[4].toString()) / etherConstant).to.be.equal((+contractDetails[3].toString() / etherConstant))
-      console.log("user position => ", userPosition)
       //de deposisted 100 dollars multiplied by 10 to get collateral
       expect((+contractDetails[3].toString() / etherConstant)).to.be.equal(+amountToDeposit.toString() * 10 / etherConstant)
-
-      //     0n,
-      // 25690n,
-      // 100000000000000000000n,
-      // 38925652004671078n,
-      // 1000000000000000000000n,
-      // 1692740495n,
-      // 0n,
-      // false
-
+      expect((+userPosition[3].toString()) / etherConstant).to.be.greaterThan(0);
       console.log("contract details => ", +(contractDetails[3].toString()) / etherConstant,
         +(contractDetails[5].toString()) / etherConstant)
     });
+
+    it("should allow the trader deposit both long and shsrt assets", async () => {
+      const { traderOne, traderTwo, liquidityProviderOne, liquidityProviderTwo, USDCContract, JamoProtocolContract, VaultContract } = await loadFixture(deployContractFixture);
+      const amountToDeposit = ethers.parseEther("100");
+      const amountToDeposit2 = ethers.parseEther("200");
+      const allowance = ethers.parseEther("200");
+      const liquidityAmount = ethers.parseEther("200");
+      //grant allowance
+
+      await USDCContract.connect(liquidityProviderOne).approve(VaultContract.target, liquidityAmount);
+      await USDCContract.connect(liquidityProviderTwo).approve(VaultContract.target, liquidityAmount);
+      await USDCContract.connect(traderOne).approve(JamoProtocolContract.target, allowance);
+      await USDCContract.connect(traderTwo).approve(JamoProtocolContract.target, allowance);
+      //provide liquidity
+      await VaultContract.connect(liquidityProviderOne).deposit(liquidityAmount, liquidityProviderOne.address);
+      await VaultContract.connect(liquidityProviderTwo).deposit(liquidityAmount, liquidityProviderTwo.address);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(amountToDeposit, 1)
+      //open a long position 
+      await JamoProtocolContract.connect(traderOne).openPosition(amountToDeposit, 2);
+      const shortPosition = await JamoProtocolContract.getPositionByAddressAndIndex(traderOne.address, 0);
+      const longPosition = await JamoProtocolContract.getPositionByAddressAndIndex(traderOne.address, 1);
+      const contractDetailsAfter = await JamoProtocolContract.getProtocolDetails();
+      expect(+contractDetailsAfter[2].toString() / etherConstant).to.be.equal(1000) //amount deposisted * 10 ( 100 * 10 )
+      expect(+contractDetailsAfter[3].toString() / etherConstant).to.be.equal(1000)
+      expect(+contractDetailsAfter[4].toString() / etherConstant).to.be.greaterThan(0);
+      console.log("short position", shortPosition);
+
+      console.log("long position", longPosition);
+
+      await JamoProtocolContract.connect(traderTwo).openPosition(amountToDeposit2, 2);
+      const contractDetailsAfterTraderTwoDeposit = await JamoProtocolContract.getProtocolDetails();
+      expect(+contractDetailsAfterTraderTwoDeposit[2].toString() / etherConstant).to.be.equal(3000)
+    });
+
+
+    it("should allow a user increase their position", async () => {
+      const { traderOne, traderTwo, liquidityProviderOne, liquidityProviderTwo, USDCContract, JamoProtocolContract, VaultContract } = await loadFixture(deployContractFixture);
+      const amountToDeposit = ethers.parseEther("100");
+      const amountToDeposit2 = ethers.parseEther("50");
+      const allowance = ethers.parseEther("200");
+      const liquidityAmount = ethers.parseEther("200");
+      //grant allowance
+
+      await USDCContract.connect(liquidityProviderOne).approve(VaultContract.target, liquidityAmount);
+      await USDCContract.connect(liquidityProviderTwo).approve(VaultContract.target, liquidityAmount);
+      await USDCContract.connect(traderOne).approve(JamoProtocolContract.target, allowance);
+      await USDCContract.connect(traderTwo).approve(JamoProtocolContract.target, allowance);
+      //provide liquidity
+      await VaultContract.connect(liquidityProviderOne).deposit(liquidityAmount, liquidityProviderOne.address);
+      await VaultContract.connect(liquidityProviderTwo).deposit(liquidityAmount, liquidityProviderTwo.address);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(amountToDeposit, 1);
+      const shortPositionBeforeIncrease = await JamoProtocolContract.getPositionByAddressAndIndex(traderOne.address, 0);
+      //increase the short position
+      await JamoProtocolContract.connect(traderOne).increasePosition(0, amountToDeposit2);
+      const shortPositionAfterIncrease = await JamoProtocolContract.getPositionByAddressAndIndex(traderOne.address, 0);
+
+      console.log("before ", shortPositionBeforeIncrease)
+      console.log("after ", shortPositionAfterIncrease)
+      expect(+shortPositionAfterIncrease[2].toString() / etherConstant).to.be.greaterThan(+shortPositionBeforeIncrease[2].toString() / etherConstant)
+      expect(+shortPositionAfterIncrease[3].toString() / etherConstant).to.be.greaterThan(+shortPositionBeforeIncrease[3].toString() / etherConstant)
+      expect(+shortPositionAfterIncrease[4].toString() / etherConstant).to.be.greaterThan(+shortPositionBeforeIncrease[4].toString() / etherConstant)
+    })
 
 
 

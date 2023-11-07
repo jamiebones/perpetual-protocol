@@ -153,47 +153,38 @@ contract JamoProtocol {
         //msg.sender must be the owner of the position
         UserPosition[] storage userPositions = positions[msg.sender];
         if (userPositions.length == 0) revert PositionIsEmptyError();
-        uint index = 0;
-        for (index = 0; index < userPositions.length; index++) {
-            UserPosition memory currentPosition;
-            if (currentPosition.indexPosition == positionIndex) {
-                //we are performing the increase here
-                //check if the position is opened
-                if (currentPosition.positionStatus == PositionStatus.opened) {
-                    //this is where we finally increased the position
-                    _withdrawTokenFromUser(collacteral);
-                    require(isLiquidityEnough(), "Not enough liquidity");
+        UserPosition memory currentPosition = userPositions[positionIndex];
+        if (currentPosition.indexPosition != positionIndex)
+            revert PositionIndexDoesNotExist();
+        //we are performing the increase here
+        //check if the position is opened
+        if (currentPosition.positionStatus == PositionStatus.opened) {
+            //this is where we finally increased the position
+            _withdrawTokenFromUser(collacteral);
+            require(isLiquidityEnough(), "Not enough liquidity");
 
-                    uint256 amountBorrowed = collacteral * 10;
-                    currentPosition.borrowedAmount = amountBorrowed;
+            uint256 amountBorrowed = collacteral * 10;
+            currentPosition.borrowedAmount += amountBorrowed;
 
-                    //get the price of the assets:
-                    int btcPrice = getThePriceOfBTCInUSD();
+            //get the price of the assets:
+            int btcPrice = getThePriceOfBTCInUSD();
 
-                    uint256 sizeOfToken = (multiplierFactor * amountBorrowed) /
-                        uint256(btcPrice);
+            uint256 sizeOfToken = amountBorrowed / uint256(btcPrice);
+            currentPosition.collacteral += collacteral;
+            currentPosition.tokenSize += sizeOfToken;
 
-                    currentPosition.collacteral += amountBorrowed;
-                    currentPosition.tokenSize += sizeOfToken;
-
-                    if (currentPosition.isLong) {
-                        longOpenAssets += amountBorrowed;
-                        longOpenIntrestInTokens += sizeOfToken;
-                    } else {
-                        longOpenAssets += amountBorrowed;
-                        longOpenIntrestInTokens += sizeOfToken;
-                    }
-                    //we are done so we saved everything back as we increasse the position
-                    userPositions[index] = currentPosition;
-
-                    break;
-                } else {
-                    revert PositionAtSuppliedIndexIsNotOpenedError();
-                }
+            if (currentPosition.isLong) {
+                longOpenAssets += amountBorrowed;
+                longOpenIntrestInTokens += sizeOfToken;
+            } else {
+                longOpenAssets += amountBorrowed;
+                longOpenIntrestInTokens += sizeOfToken;
             }
+            //we are done so we saved everything back as we increasse the position
+            userPositions[positionIndex] = currentPosition;
+        } else {
+            revert PositionAtSuppliedIndexIsNotOpenedError();
         }
-
-        revert PositionIndexDoesNotExist();
     }
 
     function closePosition(uint positionIndex) public returns (bool) {
@@ -405,10 +396,13 @@ contract JamoProtocol {
     }
 
     function isLiquidityEnough() public view returns (bool) {
+        console.log("short open token ", shortOpenAssets);
+        console.log("longopen Intrest In Tokens ", longOpenIntrestInTokens);
         return
             shortOpenAssets +
                 (longOpenIntrestInTokens * uint256(getThePriceOfBTCInUSD())) <
-            ((vault.getDeposistedAmount() * maxUtilizationPercentage) / 100);
+            (((vault.getDeposistedAmount() * maxUtilizationPercentage) / 100) *
+                1 ether);
     }
 
     function _withdrawTokenFromUser(uint256 amount) private {
