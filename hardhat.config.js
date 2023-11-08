@@ -6,10 +6,11 @@ module.exports = {
   defaultNetwork: "hardhat",
   networks: {
     hardhat: {
-      forking: {
-        url: `https://mainnet.infura.io/v3/${process.env.INFURAKEY}`,
-        blockNumber: 17973003
-      }
+      // forking: {
+      //   url: `https://mainnet.infura.io/v3/${process.env.INFURAKEY}`,
+      //   blockNumber: 17973003,
+        
+      // }
     }
   },
   solidity: "0.8.20",

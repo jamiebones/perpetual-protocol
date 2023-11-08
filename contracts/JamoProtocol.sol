@@ -67,14 +67,15 @@ contract JamoProtocol {
         bool isLong;
     }
 
-    constructor(address collacteral) {
+    constructor(address collacteral, address priceFeedAddress) {
         //set the collateral token here:
         collacteralToken = IERC20(collacteral);
         //set the vault address here
 
         contractDeployer = msg.sender;
         dataFeed = AggregatorV3Interface(
-            0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c //Mainnet address of BTC/USD
+            priceFeedAddress
+            //0xF4030086522a5bEEa4988F8cA5B36dbC97BeE88c //Mainnet address of BTC/USD
         );
     }
 
@@ -127,7 +128,6 @@ contract JamoProtocol {
         //btc price => price for 1 BTC / the amount the trader is borrowing
 
         uint256 sizeOfToken = amountBorrowed / uint256(btcPrice);
-        console.log("Size of Token =>", sizeOfToken);
         newPosition.tokenSize = sizeOfToken;
         newPosition.positionStatus = PositionStatus.opened;
         newPosition.isLong = investmentType == 1 ? false : true;
@@ -198,13 +198,12 @@ contract JamoProtocol {
         if (currentPosition.positionStatus == PositionStatus.opened) {
             //this is where we calculate and possibly close the position
             uint256 currentValue = (uint256(getThePriceOfBTCInUSD()) *
-                currentPosition.tokenSize) / multiplierFactor;
+                currentPosition.tokenSize);
+
             address payable receiverAddress = payable(msg.sender);
             if (currentPosition.isLong) {
-                int256 pnlLong = int256(
-                    currentValue - currentPosition.borrowedAmount
-                );
-
+                int pnlLong = int(currentValue) -
+                    int(currentPosition.borrowedAmount);
                 if (pnlLong > 0) {
                     //we have a profit situation;
                     //withdraw the profit and also the collacteral and send to the
@@ -222,6 +221,7 @@ contract JamoProtocol {
                     //the protocol owns the fault.....
                 } else {
                     //we have a loss here that must be withdrawn from the collateral
+                    //console.log("pnlLong ", pnlLong);
                     int256 amountLeftAfterLoss = int256(
                         currentPosition.collacteral
                     ) + pnlLong;
@@ -242,9 +242,9 @@ contract JamoProtocol {
                 }
             } else {
                 //we have shorting here
-                int256 pnlShort = int256(
-                    currentPosition.borrowedAmount - currentValue
-                );
+                int256 pnlShort = int256(currentPosition.borrowedAmount) -
+                    int256(currentValue);
+
                 if (pnlShort > 0) {
                     //we have a profit situation;
                     //withdraw the profit and also the collacteral and send to the
@@ -266,6 +266,11 @@ contract JamoProtocol {
                     int256 amountLeftAfterLoss = int256(
                         currentPosition.collacteral
                     ) + pnlShort;
+                    console.log(
+                        "short borrowed amount =>",
+                        currentPosition.collacteral
+                    );
+
                     currentPosition.positionStatus = PositionStatus.closed;
                     userPositions[positionIndex] = currentPosition;
                     //subtract the longopenintrest and openIntrestInTokens from the saved variables
@@ -288,7 +293,7 @@ contract JamoProtocol {
         }
     }
 
-    function liquidatePositon(address userAddress, uint positionIndex) public {
+    function liquidatePosition(address userAddress, uint positionIndex) public {
         UserPosition[] storage userPositions = positions[userAddress];
         address payable receiverAddress = payable(userAddress);
         if (userPositions.length == 0 || positionIndex > userPositions.length)
@@ -300,12 +305,11 @@ contract JamoProtocol {
         if (currentPosition.positionStatus == PositionStatus.opened) {
             //calculate the leverage of the position
             uint256 currentValue = (uint256(getThePriceOfBTCInUSD()) *
-                currentPosition.tokenSize) / multiplierFactor;
+                currentPosition.tokenSize);
             if (currentPosition.isLong) {
                 //get the pnl of the position
-                int256 pnlLong = int256(
-                    currentValue - currentPosition.borrowedAmount
-                );
+                int256 pnlLong = int256(currentValue) -
+                    int256(currentPosition.borrowedAmount);
                 if (pnlLong < 0) {
                     //we have a loss in the position lets calculate how
                     //far loss the position is in
@@ -315,6 +319,7 @@ contract JamoProtocol {
                         //we have to check if the position is within leverage
                         uint256 leverage = currentPosition.borrowedAmount /
                             uint256(balAfterLoss);
+                        console.log("leverage =>", leverage);
                         if (leverage >= maxLeverage) {
                             //liquidate reduce the longOpenAssets and longOpenIntrestInTokens
                             currentPosition.positionStatus = PositionStatus
@@ -329,7 +334,7 @@ contract JamoProtocol {
                             );
                         }
                     } else {
-                        //negative value of collacteral left. Liquidate the position and snd nothing back
+                        //negative value of collacteral left. Liquidate the position and nothing back
                         currentPosition.positionStatus = PositionStatus
                             .liquidated;
                         userPositions[positionIndex] = currentPosition;
@@ -340,9 +345,8 @@ contract JamoProtocol {
             } else {
                 //we are dealing with the shorting of tokens here
                 //get the pnl of the position
-                int256 pnlShort = int256(
-                    currentPosition.borrowedAmount - currentValue
-                );
+                int256 pnlShort = int256(currentPosition.borrowedAmount) -
+                    int256(currentValue);
                 if (pnlShort < 0) {
                     //we have a loss in the position lets calculate how
                     //far loss the position is in
@@ -396,8 +400,6 @@ contract JamoProtocol {
     }
 
     function isLiquidityEnough() public view returns (bool) {
-        console.log("short open token ", shortOpenAssets);
-        console.log("longopen Intrest In Tokens ", longOpenIntrestInTokens);
         return
             shortOpenAssets +
                 (longOpenIntrestInTokens * uint256(getThePriceOfBTCInUSD())) <
@@ -419,13 +421,7 @@ contract JamoProtocol {
     function getThePriceOfBTCInUSD() public view returns (int) {
         //makes use of 8 decimal
         // prettier-ignore
-        (
-            /* uint80 roundID */,
-            int answer,
-            /*uint startedAt*/,
-            /*uint timeStamp*/,
-            /*uint80 answeredInRound*/
-        ) = dataFeed.latestRoundData();
+        (,int answer,,,/*uint80 answeredInRound*/) = dataFeed.latestRoundData();
         //divide by the number of digits to get the real USD value
         return answer / 100000000;
     }

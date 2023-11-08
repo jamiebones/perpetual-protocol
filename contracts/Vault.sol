@@ -59,6 +59,7 @@ contract MyVault is ERC4626 {
         uint256 amount
     ) external onlyProtocol {
         //who can call this function
+        require(assetToken.balanceOf(address(this)) > amount, "Insufficient funds for payout");
         require(
             assetToken.transfer(receiverAddress, amount),
             "transfer failed"
