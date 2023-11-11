@@ -239,8 +239,23 @@ describe("JamoProtocol", function () {
       expect(+contractDetailsBefore[2].toString()/etherConstant).to.be.greaterThan(+contractDetailsAfter[2].toString()/etherConstant)
       expect(+contractDetailsBefore[3].toString()/etherConstant).to.be.greaterThan(+contractDetailsAfter[3].toString()/etherConstant)
       console.log("user position ", userPosition);
+    });
 
- 
+    it("it should be able to calulate total PNL of Traders", async () => {
+      const { traderOne, traderTwo, JamoProtocolContract, PriceFeedContract} = await loadFixture(generalOperationFixture);
+      const amountToDeposit = ethers.parseEther("100");
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(amountToDeposit, 1);
+      await JamoProtocolContract.connect(traderTwo).openPosition(amountToDeposit, 1);
+      //open a long position
+      await JamoProtocolContract.connect(traderOne).openPosition(amountToDeposit, 2);
+      
+      //set the price of BTC
+      await PriceFeedContract.setLatestPrice(24000 * 1e8); //btc price decreased
+      //calculate the total PNL of traders:
+     const totalPNL = await JamoProtocolContract.calculateTotalPNLOfTraders();
+     //calculating manually give 200 as the PNL
+     expect(+totalPNL.toString() / etherConstant).to.be.equal(200);
     });
 
 
