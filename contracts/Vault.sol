@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/token/ERC20/extensions/ERC4626.sol";
-
+import "hardhat/console.sol";
 import "./JamoProtocol.sol";
 
 contract MyVault is ERC4626 {
@@ -26,28 +26,30 @@ contract MyVault is ERC4626 {
         //return totalDeposits - totalPNLOfTraders
         int256 result = int256(assetToken.balanceOf(address(this))) -
             jamoProtocol.calculateTotalPNLOfTraders();
+        console.log("totalPNL => ", uint256(jamoProtocol.calculateTotalPNLOfTraders()));
+        console.log("asset token balance => ", assetToken.balanceOf(address(this)));
         if (result > 0) {
             return uint256(result);
         }
         return 0;
     }
 
-    function redeem(
-        uint256 shares,
+    function withdraw(
+        uint256 assets,
         address receiver,
         address owner
     ) public override returns (uint256) {
         //check the liquidity here
         require(jamoProtocol.isLiquidityEnough(), "Not enough liquidity");
-        uint256 maxShares = maxRedeem(owner);
-        if (shares > maxShares) {
-            revert ERC4626ExceededMaxRedeem(owner, shares, maxShares);
+        uint256 maxAssets = super.maxWithdraw(owner);
+        if (assets > maxAssets) {
+            revert ERC4626ExceededMaxWithdraw(owner, assets, maxAssets);
         }
 
-        uint256 assets = previewRedeem(shares);
-        _withdraw(_msgSender(), receiver, owner, assets, shares);
+        uint256 shares = super.previewWithdraw(assets);
+        super._withdraw(_msgSender(), receiver, owner, assets, shares);
 
-        return assets;
+        return shares;
     }
 
     function getDeposistedAmount() public view returns (uint) {
@@ -60,6 +62,7 @@ contract MyVault is ERC4626 {
     ) external onlyProtocol {
         //who can call this function
         require(assetToken.balanceOf(address(this)) > amount, "Insufficient funds for payout");
+        console.log("payment made ", amount);
         require(
             assetToken.transfer(receiverAddress, amount),
             "transfer failed"

@@ -386,15 +386,20 @@ contract JamoProtocol {
 
     function calculateTotalPNLOfTraders() public view returns (int) {
         uint256 borrowedAssetLong = longOpenAssets; //total borrowed long asset
+
         //the current value of the longassetInTokens * currentPriceOfBTC
-        uint256 currentValueofAssetLong = ((longOpenIntrestInTokens) *
-            uint256(getThePriceOfBTCInUSD()));
+        uint256 currentValueofAssetLong = longOpenIntrestInTokens *
+            uint256(getThePriceOfBTCInUSD());
+        
         int256 pnlLong = int256(currentValueofAssetLong) -
             int256(borrowedAssetLong);
         //for shorting assets. The same thing but in the reversed order
         uint256 borrowedAssetShort = shortOpenAssets; //total borrowed short asset
+
         uint256 currentValueofAssetShort = ((shortOpenIntrestInToken) *
             uint256(getThePriceOfBTCInUSD()));
+       
+        console.log("current value of asset short : borrowed short asset => ", currentValueofAssetShort, borrowedAssetShort);
         int256 pnlShort = int256(borrowedAssetShort) -
             int256(currentValueofAssetShort);
         //add the pnlshort and long together to get the exact value;
