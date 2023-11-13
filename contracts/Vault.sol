@@ -24,10 +24,10 @@ contract MyVault is ERC4626 {
 
     function totalAssets() public view override returns (uint256) {
         //return totalDeposits - totalPNLOfTraders
+        console.log("asset token value => ", assetToken.balanceOf(address(this)));
+        console.log("total pnl => ", uint256(jamoProtocol.calculateTotalPNLOfTraders()));
         int256 result = int256(assetToken.balanceOf(address(this))) -
             jamoProtocol.calculateTotalPNLOfTraders();
-        console.log("totalPNL => ", uint256(jamoProtocol.calculateTotalPNLOfTraders()));
-        console.log("asset token balance => ", assetToken.balanceOf(address(this)));
         if (result > 0) {
             return uint256(result);
         }

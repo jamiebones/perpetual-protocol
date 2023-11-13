@@ -33,6 +33,7 @@ contract JamoProtocol {
 
     //constant variables
     IERC20 public collacteralToken;
+    address private _vaultAddress;
 
     // Create a set of addresses
     EnumerableSet.AddressSet private addressSet;
@@ -58,7 +59,6 @@ contract JamoProtocol {
     //define structs
     struct UserPosition {
         uint256 indexPosition;
-        int256 initialAssetPrice;
         uint256 collacteral; //USDC amount dropped
         uint256 tokenSize; //Amount of BTC (token) the borrowed fund was able to get you
         uint256 borrowedAmount; //The amount that was borrowed in USD
@@ -96,6 +96,7 @@ contract JamoProtocol {
         address vaultAddress
     ) external onlyDeployer initialize {
         vault = MyVault(vaultAddress);
+        _vaultAddress = vaultAddress;
         initializer = 1;
     }
 
@@ -118,7 +119,6 @@ contract JamoProtocol {
         }
 
         newPosition.indexPosition = newpositionIndex;
-        newPosition.initialAssetPrice = btcPrice;
         newPosition.collacteral = collacteral;
 
         //borrowed amount is 10 x of collacteral
@@ -187,7 +187,7 @@ contract JamoProtocol {
         }
     }
 
-    function closePosition(uint positionIndex) public returns (bool) {
+    function closePosition(uint positionIndex) public {
         UserPosition[] storage userPositions = positions[msg.sender];
         if (userPositions.length == 0 || positionIndex > userPositions.length)
             revert PositionIsEmptyError();
@@ -199,92 +199,76 @@ contract JamoProtocol {
             //this is where we calculate and possibly close the position
             uint256 currentValue = (uint256(getThePriceOfBTCInUSD()) *
                 currentPosition.tokenSize);
-
+            bool isLong = false;
+            int256 pnl;
             address payable receiverAddress = payable(msg.sender);
             if (currentPosition.isLong) {
-                int pnlLong = int(currentValue) -
-                    int(currentPosition.borrowedAmount);
-                if (pnlLong > 0) {
-                    //we have a profit situation;
-                    //withdraw the profit and also the collacteral and send to the
-                    uint256 amountToReceive = uint256(pnlLong) +
-                        currentPosition.collacteral;
-                    //CEI
-                    currentPosition.positionStatus = PositionStatus.closed;
-                    userPositions[positionIndex] = currentPosition;
-                    //subtract the longopenintrest and openIntrestInTokens from the saved variables
-                    longOpenAssets -= currentPosition.collacteral;
-                    longOpenIntrestInTokens -= currentPosition.tokenSize;
-                    //calculate and transfer the tokens
-                    vault.withdrawTokens(receiverAddress, amountToReceive);
-                    return true;
-                    //the protocol owns the fault.....
-                } else {
-                    //we have a loss here that must be withdrawn from the collateral
-                    //console.log("pnlLong ", pnlLong);
-                    int256 amountLeftAfterLoss = int256(
-                        currentPosition.collacteral
-                    ) + pnlLong;
-                    currentPosition.positionStatus = PositionStatus.closed;
-                    userPositions[positionIndex] = currentPosition;
-                    //subtract the longopenintrest and openIntrestInTokens from the saved variables
-                    longOpenAssets -= currentPosition.collacteral;
-                    longOpenIntrestInTokens -= currentPosition.tokenSize;
-                    //calculate and transfer the tokens
-                    if (amountLeftAfterLoss > 0) {
-                        //transfer what is left to the trader and close the position
-                        vault.withdrawTokens(
-                            receiverAddress,
-                            uint256(amountLeftAfterLoss)
-                        );
-                    }
-                    return true;
-                }
+                isLong = true;
+                pnl = int(currentValue) - int(currentPosition.borrowedAmount);
             } else {
-                //we have shorting here
-                int256 pnlShort = int256(currentPosition.borrowedAmount) -
+                //shorting here
+                pnl =
+                    int256(currentPosition.borrowedAmount) -
                     int256(currentValue);
-
-                if (pnlShort > 0) {
-                    //we have a profit situation;
-                    //withdraw the profit and also the collacteral and send to the
-                    uint256 amountToReceive = uint256(pnlShort) +
-                        currentPosition.collacteral;
-                    //CEI
-                    currentPosition.positionStatus = PositionStatus.closed;
-                    userPositions[positionIndex] = currentPosition;
+            }
+            if (pnl > 0) {
+                //we have a profit situation;
+                //withdraw the profit and also the collacteral and send to the
+                //CEI
+                currentPosition.positionStatus = PositionStatus.closed;
+                userPositions[positionIndex] = currentPosition;
+                if (isLong) {
+                    //subtract the longopenintrest and openIntrestInTokens from the saved variables
+                    longOpenAssets -= currentPosition.collacteral;
+                    longOpenIntrestInTokens -= currentPosition.tokenSize;
+                } else {
                     //subtract the sopenintrest and openIntrestInTokens from the saved variables
                     shortOpenAssets -= currentPosition.collacteral;
                     shortOpenIntrestInToken -= currentPosition.tokenSize;
-                    //calculate and transfer the tokens
-                    vault.withdrawTokens(receiverAddress, amountToReceive);
-                    return true;
-                    //the protocol owns the fault.....
-                } else {
-                    //the loss state of the shorting of tokens
-                    //we have a loss here that must be withdrawn from the collateral
-                    int256 amountLeftAfterLoss = int256(
-                        currentPosition.collacteral
-                    ) + pnlShort;
-                    console.log(
-                        "short borrowed amount =>",
-                        currentPosition.collacteral
-                    );
-
-                    currentPosition.positionStatus = PositionStatus.closed;
-                    userPositions[positionIndex] = currentPosition;
+                }
+                //calculate and transfer the tokens
+                collacteralToken.transfer(
+                    receiverAddress,
+                    currentPosition.collacteral
+                );
+                vault.withdrawTokens(receiverAddress, uint256(pnl));
+            } else {
+                //we have a loss here that must be withdrawn from the collateral
+                //console.log("pnlLong ", pnlLong);
+                int256 amountLeftAfterLoss = int256(
+                    currentPosition.collacteral
+                ) + pnl;
+                currentPosition.positionStatus = PositionStatus.closed;
+                userPositions[positionIndex] = currentPosition;
+                if (isLong) {
                     //subtract the longopenintrest and openIntrestInTokens from the saved variables
+                    longOpenAssets -= currentPosition.collacteral;
+                    longOpenIntrestInTokens -= currentPosition.tokenSize;
+                } else {
+                    //subtract the sopenintrest and openIntrestInTokens from the saved variables
                     shortOpenAssets -= currentPosition.collacteral;
                     shortOpenIntrestInToken -= currentPosition.tokenSize;
-                    //calculate and transfer the tokens
-                    if (amountLeftAfterLoss > 0) {
-                        //transfer what is left to the trader and close the position
-                        vault.withdrawTokens(
-                            receiverAddress,
-                            uint256(amountLeftAfterLoss)
-                        );
-                    }
-                    return true;
+                }
+
+                //calculate and transfer the tokens
+                if (amountLeftAfterLoss > 0) {
+                    //transfer what is left to the trader and close the position
+                    //collacteral is going to the vault
+                    uint256 amountTotransferToPool = currentPosition
+                        .collacteral - uint256(amountLeftAfterLoss);
+                    collacteralToken.transfer(
+                        _vaultAddress,
+                        amountTotransferToPool
+                    );
+                    collacteralToken.transfer(
+                        receiverAddress,
+                        uint256(amountLeftAfterLoss)
+                    );
+                } else {
+                    collacteralToken.transfer(
+                        _vaultAddress,
+                        currentPosition.collacteral
+                    );
                 }
             }
         } else {
@@ -293,104 +277,14 @@ contract JamoProtocol {
         }
     }
 
-    function liquidatePosition(address userAddress, uint positionIndex) public {
-        UserPosition[] storage userPositions = positions[userAddress];
-        address payable receiverAddress = payable(userAddress);
-        if (userPositions.length == 0 || positionIndex > userPositions.length)
-            revert PositionIsEmptyError();
-        require(isLiquidityEnough(), "Not enough liquidity");
-        UserPosition memory currentPosition = userPositions[positionIndex];
-        //we are performing the increase here
-        //check if the position is opened
-        if (currentPosition.positionStatus == PositionStatus.opened) {
-            //calculate the leverage of the position
-            uint256 currentValue = (uint256(getThePriceOfBTCInUSD()) *
-                currentPosition.tokenSize);
-            if (currentPosition.isLong) {
-                //get the pnl of the position
-                int256 pnlLong = int256(currentValue) -
-                    int256(currentPosition.borrowedAmount);
-                if (pnlLong < 0) {
-                    //we have a loss in the position lets calculate how
-                    //far loss the position is in
-                    int256 balAfterLoss = int256(currentPosition.collacteral) +
-                        pnlLong;
-                    if (balAfterLoss > 0) {
-                        //we have to check if the position is within leverage
-                        uint256 leverage = currentPosition.borrowedAmount /
-                            uint256(balAfterLoss);
-                        console.log("leverage =>", leverage);
-                        if (leverage >= maxLeverage) {
-                            //liquidate reduce the longOpenAssets and longOpenIntrestInTokens
-                            currentPosition.positionStatus = PositionStatus
-                                .liquidated;
-                            userPositions[positionIndex] = currentPosition;
-                            longOpenAssets -= currentPosition.collacteral;
-                            longOpenIntrestInTokens -= currentPosition
-                                .tokenSize;
-                            vault.withdrawTokens(
-                                receiverAddress,
-                                uint256(balAfterLoss)
-                            );
-                        }
-                    } else {
-                        //negative value of collacteral left. Liquidate the position and nothing back
-                        currentPosition.positionStatus = PositionStatus
-                            .liquidated;
-                        userPositions[positionIndex] = currentPosition;
-                        longOpenAssets -= currentPosition.collacteral;
-                        longOpenIntrestInTokens -= currentPosition.tokenSize;
-                    }
-                }
-            } else {
-                //we are dealing with the shorting of tokens here
-                //get the pnl of the position
-                int256 pnlShort = int256(currentPosition.borrowedAmount) -
-                    int256(currentValue);
-                if (pnlShort < 0) {
-                    //we have a loss in the position lets calculate how
-                    //far loss the position is in
-                    int256 balAfterLoss = int256(currentPosition.collacteral) +
-                        pnlShort;
-                    if (balAfterLoss > 0) {
-                        //we have to check if the position is within leverage
-                        uint256 leverage = currentPosition.borrowedAmount /
-                            uint256(balAfterLoss);
-                        if (leverage >= maxLeverage) {
-                            //liquidate reduce the longOpenAssets and longOpenIntrestInTokens
-                            currentPosition.positionStatus = PositionStatus
-                                .liquidated;
-                            userPositions[positionIndex] = currentPosition;
-                            shortOpenAssets -= currentPosition.collacteral;
-                            shortOpenIntrestInToken -= currentPosition
-                                .tokenSize;
-                            vault.withdrawTokens(
-                                receiverAddress,
-                                uint256(balAfterLoss)
-                            );
-                        }
-                    } else {
-                        //negative value of collacteral left. Liquidate the position and snd nothing back
-                        currentPosition.positionStatus = PositionStatus
-                            .liquidated;
-                        userPositions[positionIndex] = currentPosition;
-                        shortOpenAssets -= currentPosition.collacteral;
-                        shortOpenIntrestInToken -= currentPosition.tokenSize;
-                    }
-                }
-            }
-        } else {
-            revert PositionNotOpenedError();
-        }
-    }
-
+    
     function calculateTotalPNLOfTraders() public view returns (int) {
         uint256 borrowedAssetLong = longOpenAssets; //total borrowed long asset
 
         //the current value of the longassetInTokens * currentPriceOfBTC
         uint256 currentValueofAssetLong = longOpenIntrestInTokens *
             uint256(getThePriceOfBTCInUSD());
-        
+
         int256 pnlLong = int256(currentValueofAssetLong) -
             int256(borrowedAssetLong);
         //for shorting assets. The same thing but in the reversed order
@@ -398,12 +292,15 @@ contract JamoProtocol {
 
         uint256 currentValueofAssetShort = ((shortOpenIntrestInToken) *
             uint256(getThePriceOfBTCInUSD()));
-       
-        console.log("current value of asset short : borrowed short asset => ", currentValueofAssetShort, borrowedAssetShort);
         int256 pnlShort = int256(borrowedAssetShort) -
             int256(currentValueofAssetShort);
         //add the pnlshort and long together to get the exact value;
-        return pnlLong + pnlShort;
+        int256 result = pnlLong + pnlShort;
+        if (result < 0) {
+            return 0;
+        } else {
+            return result;
+        }
     }
 
     function isLiquidityEnough() public view returns (bool) {
@@ -454,5 +351,89 @@ contract JamoProtocol {
     ) public view returns (UserPosition memory userPosition) {
         UserPosition[] memory position = positions[userAddress];
         return position[positionIndex];
+    }
+
+    function liquidatePosition(address userAddress, uint positionIndex) public {
+        UserPosition[] storage userPositions = positions[userAddress];
+        address payable receiverAddress = payable(userAddress);
+        if (userPositions.length == 0 || positionIndex > userPositions.length)
+            revert PositionIsEmptyError();
+        require(isLiquidityEnough(), "Not enough liquidity");
+        UserPosition memory currentPosition = userPositions[positionIndex];
+        //we are performing the increase here
+        //check if the position is opened
+        if (currentPosition.positionStatus == PositionStatus.opened) {
+            //calculate the leverage of the position
+            uint256 currentValue = (uint256(getThePriceOfBTCInUSD()) *
+                currentPosition.tokenSize);
+            int256 pnl;
+            bool isLong = false;
+            if (currentPosition.isLong) {
+                //get the pnl of the position
+                isLong = true;
+                pnl =
+                    int256(currentValue) -
+                    int256(currentPosition.borrowedAmount);
+            } else {
+                //shorting here
+                pnl =
+                    int256(currentPosition.borrowedAmount) -
+                    int256(currentValue);
+            }
+
+            if (pnl < 0) {
+                //we have a loss in the position lets calculate how
+                //far loss the position is in
+                int256 balAfterLoss = int256(currentPosition.collacteral) + pnl;
+                if (balAfterLoss > 0) {
+                    //we have to check if the position is within leverage
+                    uint256 leverage = currentPosition.borrowedAmount /
+                        uint256(balAfterLoss);
+                    if (leverage >= maxLeverage) {
+                        currentPosition.positionStatus = PositionStatus
+                            .liquidated;
+                        if (isLong) {
+                            userPositions[positionIndex] = currentPosition;
+                            longOpenAssets -= currentPosition.collacteral;
+                            longOpenIntrestInTokens -= currentPosition
+                                .tokenSize;
+                        } else {
+                            //shorting here
+                            userPositions[positionIndex] = currentPosition;
+                            shortOpenAssets -= currentPosition.collacteral;
+                            shortOpenIntrestInToken -= currentPosition
+                                .tokenSize;
+                        }
+                        uint256 liquidityMoney = currentPosition.collacteral -
+                            uint256(balAfterLoss);
+                        collacteralToken.transfer(
+                            receiverAddress,
+                            uint256(balAfterLoss)
+                        );
+                        collacteralToken.transfer(
+                            _vaultAddress,
+                            liquidityMoney
+                        );
+                        //send money to liquidity pool also
+                    }
+                } else {
+                    //negative value of collacteral left. Liquidate the position and nothing back
+                    //do longing and shorting here
+                    currentPosition.positionStatus = PositionStatus.liquidated;
+                    if (isLong) {
+                        userPositions[positionIndex] = currentPosition;
+                        longOpenAssets -= currentPosition.collacteral;
+                        longOpenIntrestInTokens -= currentPosition.tokenSize;
+                    } else {
+                        //shorting here
+                        userPositions[positionIndex] = currentPosition;
+                        shortOpenAssets -= currentPosition.collacteral;
+                        shortOpenIntrestInToken -= currentPosition.tokenSize;
+                    }
+                }
+            }
+        } else {
+            revert PositionNotOpenedError();
+        }
     }
 }
