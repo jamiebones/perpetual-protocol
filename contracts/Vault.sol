@@ -24,8 +24,14 @@ contract MyVault is ERC4626 {
 
     function totalAssets() public view override returns (uint256) {
         //return totalDeposits - totalPNLOfTraders
-        console.log("asset token value => ", assetToken.balanceOf(address(this)));
-        console.log("total pnl => ", uint256(jamoProtocol.calculateTotalPNLOfTraders()));
+        console.log(
+            "asset token value => ",
+            assetToken.balanceOf(address(this))
+        );
+        console.log(
+            "total pnl => ",
+            uint256(jamoProtocol.calculateTotalPNLOfTraders())
+        );
         int256 result = int256(assetToken.balanceOf(address(this))) -
             jamoProtocol.calculateTotalPNLOfTraders();
         if (result > 0) {
@@ -61,8 +67,10 @@ contract MyVault is ERC4626 {
         uint256 amount
     ) external onlyProtocol {
         //who can call this function
-        require(assetToken.balanceOf(address(this)) > amount, "Insufficient funds for payout");
-        console.log("payment made ", amount);
+        require(
+            assetToken.balanceOf(address(this)) > amount,
+            "Insufficient funds for payout"
+        );
         require(
             assetToken.transfer(receiverAddress, amount),
             "transfer failed"

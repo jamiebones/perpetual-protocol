@@ -6,7 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract USDC is ERC20 {
     constructor() ERC20("USDC", "USDC") {
-        _mint(msg.sender, 1000000 * 1 ether);
+        _mint(msg.sender, 100000000 * 1 ether);
     }
 
     function mint(address recipient, uint256 amount) external {
@@ -14,6 +14,6 @@ contract USDC is ERC20 {
     }
 
     function decimals() public view virtual override returns (uint8) {
-        return 18;
+        return 8;
     }
 }
