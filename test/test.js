@@ -324,101 +324,162 @@ describe("JamoProtocol", function () {
     });
 
 
-      it("should allow a user close their short position with a loss ", async () => {
-        const { traderOne, USDCContract, JamoProtocolContract, PriceFeedContract } = await loadFixture(generalOperationFixture);
-        const collacteralAmount = ethers.parseUnits("200", 8);
-        const positionSize = ethers.parseUnits("2000", 8);
-        const balBefore = await USDCContract.balanceOf(traderOne.address);
-        //open a short position
-        await JamoProtocolContract.connect(traderOne).openPosition(positionSize,collacteralAmount, 1);
-        const protocolDetailsBefore = await JamoProtocolContract.getProtocolDetails();
-        //set the price of BTC
-        PriceFeedContract.setLatestPrice(30300 * 1e8); //btc price increaed
-        await JamoProtocolContract.connect(traderOne).closePosition(0);
-        const protocolDetailsAfter = await JamoProtocolContract.getProtocolDetails();
-        const balAfter = await USDCContract.balanceOf(traderOne.address);
-        const userPosition = await JamoProtocolContract.getPositionByAddressAndIndex(traderOne.address, 0);
-        expect(+balAfter.toString()).to.be.lessThan(+balBefore.toString());
-        //assert if the long intrest in token was reduced
-        expect(+protocolDetailsBefore[3].toString() / usdcConstant).to.be.greaterThan(+protocolDetailsAfter[3].toString() / usdcConstant)
-        expect(+protocolDetailsBefore[5].toString() / usdcConstant).to.be.greaterThan(+protocolDetailsAfter[5].toString() / usdcConstant)
-        console.log("userPosition ", userPosition)
-        console.log("balance before =>", +balBefore.toString() / usdcConstant);
-        console.log("balance after =>", +balAfter.toString() / usdcConstant);
-      });
+    it("should allow a user close their short position with a loss ", async () => {
+      const { traderOne, USDCContract, JamoProtocolContract, PriceFeedContract } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("200", 8);
+      const positionSize = ethers.parseUnits("2000", 8);
+      const balBefore = await USDCContract.balanceOf(traderOne.address);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 1);
+      const protocolDetailsBefore = await JamoProtocolContract.getProtocolDetails();
+      //set the price of BTC
+      PriceFeedContract.setLatestPrice(30300 * 1e8); //btc price increaed
+      await JamoProtocolContract.connect(traderOne).closePosition(0);
+      const protocolDetailsAfter = await JamoProtocolContract.getProtocolDetails();
+      const balAfter = await USDCContract.balanceOf(traderOne.address);
+      const userPosition = await JamoProtocolContract.getPositionByAddressAndIndex(traderOne.address, 0);
+      expect(+balAfter.toString()).to.be.lessThan(+balBefore.toString());
+      //assert if the long intrest in token was reduced
+      expect(+protocolDetailsBefore[3].toString() / usdcConstant).to.be.greaterThan(+protocolDetailsAfter[3].toString() / usdcConstant)
+      expect(+protocolDetailsBefore[5].toString() / usdcConstant).to.be.greaterThan(+protocolDetailsAfter[5].toString() / usdcConstant)
+      console.log("userPosition ", userPosition)
+      console.log("balance before =>", +balBefore.toString() / usdcConstant);
+      console.log("balance after =>", +balAfter.toString() / usdcConstant);
+    });
 
-      it("it should be able to liquidate a position", async () => {
-        const { traderOne, USDCContract, JamoProtocolContract, PriceFeedContract } = await loadFixture(generalOperationFixture);
-        const collacteralAmount = ethers.parseUnits("100", 8);
-        const positionSize = ethers.parseUnits("100", 8);
-        //open a short position
-        await JamoProtocolContract.connect(traderOne).openPosition(positionSize,collacteralAmount, 1); //short
-        await JamoProtocolContract.connect(traderOne).openPosition(positionSize,collacteralAmount, 2); //long
-        const contractDetailsBefore = await JamoProtocolContract.getProtocolDetails();
-        //set the price of BTC
-        await PriceFeedContract.setLatestPrice(20000 * 1e8); //btc price decreased
-        await JamoProtocolContract.liquidatePosition(traderOne.address, 1);
-        await PriceFeedContract.setLatestPrice(45000 * 1e8);
-        await JamoProtocolContract.liquidatePosition(traderOne.address, 0);
-        const contractDetailsAfter = await JamoProtocolContract.getProtocolDetails();
-        expect(+contractDetailsBefore[2].toString() / usdcConstant).to.be.greaterThan(+contractDetailsAfter[2].toString() / usdcConstant)
-        expect(+contractDetailsBefore[3].toString() / usdcConstant).to.be.greaterThan(+contractDetailsAfter[3].toString() / usdcConstant)
-        
-      });
+    it("it should be able to liquidate a position", async () => {
+      const { traderOne, USDCContract, JamoProtocolContract, PriceFeedContract } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("100", 8);
+      const positionSize = ethers.parseUnits("100", 8);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 1); //short
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 2); //long
+      const contractDetailsBefore = await JamoProtocolContract.getProtocolDetails();
+      //set the price of BTC
+      await PriceFeedContract.setLatestPrice(20000 * 1e8); //btc price decreased
+      await JamoProtocolContract.liquidatePosition(traderOne.address, 1);
+      await PriceFeedContract.setLatestPrice(45000 * 1e8);
+      await JamoProtocolContract.liquidatePosition(traderOne.address, 0);
+      const contractDetailsAfter = await JamoProtocolContract.getProtocolDetails();
+      expect(+contractDetailsBefore[2].toString() / usdcConstant).to.be.greaterThan(+contractDetailsAfter[2].toString() / usdcConstant)
+      expect(+contractDetailsBefore[3].toString() / usdcConstant).to.be.greaterThan(+contractDetailsAfter[3].toString() / usdcConstant)
 
-      it("it should be able to calulate total PNL of Traders", async () => {
-        const { traderOne, traderTwo, JamoProtocolContract, PriceFeedContract } = await loadFixture(generalOperationFixture);
-        const collacteralAmount = ethers.parseUnits("100", 8);
-        const positionSize = ethers.parseUnits("100", 8);
-        //open a short position
-        await JamoProtocolContract.connect(traderOne).openPosition(positionSize,collacteralAmount, 1);
-        await JamoProtocolContract.connect(traderTwo).openPosition(positionSize,collacteralAmount, 1);
-        //open a long position
-        await JamoProtocolContract.connect(traderOne).openPosition(positionSize,collacteralAmount, 2);
+    });
 
-        const contractDetailsAfter = await JamoProtocolContract.getProtocolDetails();
+    it("it should be able to calulate total PNL of Traders", async () => {
+      const { traderOne, traderTwo, JamoProtocolContract, PriceFeedContract } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("100", 8);
+      const positionSize = ethers.parseUnits("100", 8);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 1);
+      await JamoProtocolContract.connect(traderTwo).openPosition(positionSize, collacteralAmount, 1);
+      //open a long position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 2);
 
-        console.log("contract details => ", contractDetailsAfter);
+      const contractDetailsAfter = await JamoProtocolContract.getProtocolDetails();
 
-        //set the price of BTC
-        await PriceFeedContract.setLatestPrice(24000 * 1e8); //btc price decreased
-        //calculate the total PNL of traders:
-        const totalPNL = await JamoProtocolContract.calculateTotalPNLOfTraders();
-        //calculating manually give 20.00008 as the PNL
-        expect(+totalPNL.toString() / usdcConstant).to.be.equal(20.00008);
-      });
+      console.log("contract details => ", contractDetailsAfter);
 
-      it("should return the correct asset used by the Vault ", async () => {
-        const { USDCContract, VaultContract } = await loadFixture(deployContractFixture);
-        const address = await VaultContract.asset();
-        expect(address).to.be.equal(USDCContract.target);
-      })
+      //set the price of BTC
+      await PriceFeedContract.setLatestPrice(24000 * 1e8); //btc price decreased
+      //calculate the total PNL of traders:
+      const totalPNL = await JamoProtocolContract.calculateTotalPNLOfTraders();
+      //calculating manually give 20.00008 as the PNL
+      expect(+totalPNL.toString() / usdcConstant).to.be.equal(20.00008);
+    });
 
-      it("shoul be able to withraw deposit with intrest", async () => {
-        const { traderOne, traderTwo, USDCContract, JamoProtocolContract, PriceFeedContract, VaultContract, liquidityProviderOne } = await loadFixture(generalOperationFixture);
-        const collacteralAmount = ethers.parseUnits("100", 8);
-        const positionSize = ethers.parseUnits("100", 8);
-        const balBefore = await USDCContract.balanceOf(liquidityProviderOne.address);
-        //open a short position
-        await JamoProtocolContract.connect(traderOne).openPosition(positionSize,collacteralAmount, 2);
-        await JamoProtocolContract.connect(traderTwo).openPosition(positionSize,collacteralAmount, 2);
-        // //set the price of BTC
-        await PriceFeedContract.setLatestPrice(29500 * 1e8); //btc price increase
-        await JamoProtocolContract.connect(traderOne).closePosition(0);
-        await JamoProtocolContract.connect(traderTwo).closePosition(0);
-        let maxAssets = await VaultContract.maxWithdraw(liquidityProviderOne.address);
-        console.log("max assets dropped => ", maxAssets);
-        const valAssetBalance = await USDCContract.balanceOf(VaultContract.target);
-        const sharesLiquidityMan = await VaultContract.balanceOf(liquidityProviderOne.address);
-        console.log("asset of vault => ", +valAssetBalance.toString()/ usdcConstant);
-        console.log("shares of liquidity person => ", +sharesLiquidityMan.toString()/ usdcConstant);
-        await VaultContract.connect(liquidityProviderOne).withdraw(maxAssets, liquidityProviderOne.address, liquidityProviderOne.address)
-        const balAfter = await USDCContract.balanceOf(liquidityProviderOne.address);
-        console.log("balance before =>", +balBefore.toString() / usdcConstant);
-        console.log("balance after =>", +balAfter.toString() / usdcConstant);
-        expect(+balAfter.toString() / usdcConstant).to.be.greaterThan(+balBefore.toString() / usdcConstant);
+    it("should return the correct asset used by the Vault ", async () => {
+      const { USDCContract, VaultContract } = await loadFixture(deployContractFixture);
+      const address = await VaultContract.asset();
+      expect(address).to.be.equal(USDCContract.target);
+    })
 
-      })
+    it("shoul be able to withraw deposit with intrest", async () => {
+      const { traderOne, traderTwo, USDCContract, JamoProtocolContract, PriceFeedContract, VaultContract, liquidityProviderOne } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("100", 8);
+      const positionSize = ethers.parseUnits("100", 8);
+      const balBefore = await USDCContract.balanceOf(liquidityProviderOne.address);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 2);
+      await JamoProtocolContract.connect(traderTwo).openPosition(positionSize, collacteralAmount, 2);
+      // //set the price of BTC
+      await PriceFeedContract.setLatestPrice(29500 * 1e8); //btc price increase
+      await JamoProtocolContract.connect(traderOne).closePosition(0);
+      await JamoProtocolContract.connect(traderTwo).closePosition(0);
+      let maxAssets = await VaultContract.maxWithdraw(liquidityProviderOne.address);
+      console.log("max assets dropped => ", maxAssets);
+      const valAssetBalance = await USDCContract.balanceOf(VaultContract.target);
+      const sharesLiquidityMan = await VaultContract.balanceOf(liquidityProviderOne.address);
+      console.log("asset of vault => ", +valAssetBalance.toString() / usdcConstant);
+      console.log("shares of liquidity person => ", +sharesLiquidityMan.toString() / usdcConstant);
+      await VaultContract.connect(liquidityProviderOne).withdraw(maxAssets, liquidityProviderOne.address, liquidityProviderOne.address)
+      const balAfter = await USDCContract.balanceOf(liquidityProviderOne.address);
+      console.log("balance before =>", +balBefore.toString() / usdcConstant);
+      console.log("balance after =>", +balAfter.toString() / usdcConstant);
+      expect(+balAfter.toString() / usdcConstant).to.be.greaterThan(+balBefore.toString() / usdcConstant);
+
+    })
+
+    it("it should allow a trader to reduced their collacteral", async () => {
+      const { traderOne, JamoProtocolContract, USDCContract } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("100", 8);
+      const positionSize = ethers.parseUnits("100", 8);
+      const reducedCollacteral = ethers.parseUnits("10", 8);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 1);
+      const balBefore = await USDCContract.balanceOf(traderOne.address);
+      await JamoProtocolContract.connect(traderOne).decreaseCollacteral(0, positionSize, reducedCollacteral);
+      const balAfter = await USDCContract.balanceOf(traderOne.address);
+      expect(+balAfter.toString()).to.be.greaterThan(+balBefore.toString())
+      console.log("bal before => ", +balBefore.toString()/ usdcConstant);
+      console.log("bal after => ", +balAfter.toString()/ usdcConstant);
+    });
+
+    it("it should allow a trader to reduced their collacteral via positionSize in shorting and longing", async () => {
+      const { traderOne, JamoProtocolContract } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("100", 8);
+      const positionSize = ethers.parseUnits("100", 8);
+      const reducedPosition = ethers.parseUnits("10", 8);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 1);
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 2);
+      const contractDetailsBefore = await JamoProtocolContract.getProtocolDetails();
+      await JamoProtocolContract.connect(traderOne).decreaseCollacteral(0, reducedPosition, 0);
+      await JamoProtocolContract.connect(traderOne).decreaseCollacteral(1, reducedPosition, 0);
+      const contractDetailsAfter = await JamoProtocolContract.getProtocolDetails();
+      expect(+contractDetailsAfter[3].toString()).to.be.lessThan(+contractDetailsBefore[3].toString())
+      expect(+contractDetailsAfter[2].toString()).to.be.lessThan(+contractDetailsBefore[2].toString())
+    });
+
+    it("it should allow a trader to reduced both position and collacteral", async () => {
+      const { traderOne, JamoProtocolContract, USDCContract } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("100", 8);
+      const positionSize = ethers.parseUnits("100", 8);
+      const reducedPosition = ethers.parseUnits("10", 8);
+      const reducedCollacteral = ethers.parseUnits("10", 8);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 1);
+      const balBefore = await USDCContract.balanceOf(traderOne.address);
+      const contractDetailsBefore = await JamoProtocolContract.getProtocolDetails();
+      await JamoProtocolContract.connect(traderOne).decreaseCollacteral(0, reducedPosition, reducedCollacteral);
+      const contractDetailsAfter = await JamoProtocolContract.getProtocolDetails();
+      const balAfter = await USDCContract.balanceOf(traderOne.address);
+      expect(+balAfter.toString()).to.be.greaterThan(+balBefore.toString())
+      expect(+contractDetailsAfter[3].toString()).to.be.lessThan(+contractDetailsBefore[3].toString())
+    });
+
+    it("it should throw an error when the max leverage is exceeded", async () => {
+      const { traderOne, JamoProtocolContract } = await loadFixture(generalOperationFixture);
+      const collacteralAmount = ethers.parseUnits("100", 8);
+      const positionSize = ethers.parseUnits("100", 8);
+      const reducedPosition = ethers.parseUnits("90", 8);
+      const reducedCollacteral = ethers.parseUnits("90", 8);
+      //open a short position
+      await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteralAmount, 1);
+      expect(await JamoProtocolContract.connect(traderOne).decreaseCollacteral(0, reducedPosition, reducedCollacteral)).to.be.revertedWithCustomError(JamoProtocolContract, "CollacteralPositionSizeError")
+    });
+
+
   });
 
 });

@@ -428,6 +428,86 @@ contract JamoProtocol {
         }
     }
 
+    function decreaseCollacteral(
+        uint256 positionIndex,
+        uint256 reducedPosition,
+        uint256 reduceCollacteral
+    ) public {
+        UserPosition[] storage userPositions = positions[msg.sender];
+        if (userPositions.length == 0 || positionIndex > userPositions.length)
+            revert PositionIsEmptyError();
+        UserPosition memory currentPosition = userPositions[positionIndex];
+        if (currentPosition.positionStatus == PositionStatus.opened) {
+            //reduced the collacteral and transfer the amount to the trader
+            if (
+                reducedPosition > 0 &&
+                reducedPosition < currentPosition.borrowedAmount &&
+                reduceCollacteral > 0 &&
+                reduceCollacteral < currentPosition.collacteral
+            ) {
+                _checkIfPositionMeetsRequirement(
+                    currentPosition.borrowedAmount - reducedPosition,
+                    currentPosition.collacteral - reduceCollacteral
+                );
+            } else if (
+                reducedPosition > 0 &&
+                reducedPosition < currentPosition.borrowedAmount
+            ) {
+                _checkIfPositionMeetsRequirement(
+                    currentPosition.borrowedAmount - reducedPosition,
+                    currentPosition.collacteral
+                );
+            } else if (
+                reduceCollacteral > 0 &&
+                reduceCollacteral < currentPosition.collacteral
+            ) {
+                _checkIfPositionMeetsRequirement(
+                    currentPosition.borrowedAmount,
+                    currentPosition.collacteral - reduceCollacteral
+                );
+            } 
+            uint256 openIntrestInToken = (reducedPosition *
+                currentPosition.tokenSize) / currentPosition.borrowedAmount;
+            if (
+                currentPosition.isLong &&
+                reducedPosition > 0 &&
+                reducedPosition < currentPosition.borrowedAmount
+            ) {
+                //reduce the longOpenAssets and longOpenIntrestInTokens
+                longOpenAssets -= reducedPosition;
+                longOpenIntrestInTokens =
+                    longOpenIntrestInTokens -
+                    currentPosition.tokenSize +
+                    openIntrestInToken;
+            } else if (
+                currentPosition.isLong == false &&
+                reducedPosition > 0 &&
+                reducedPosition < currentPosition.borrowedAmount
+            ) {
+                //shorting
+                console.log("reduced ", shortOpenAssets, reducedPosition);
+                shortOpenAssets -= reducedPosition;
+                shortOpenIntrestInToken =
+                    shortOpenIntrestInToken -
+                    currentPosition.tokenSize +
+                    openIntrestInToken;
+            }
+
+            if (
+                reduceCollacteral > 0 &&
+                reduceCollacteral < currentPosition.collacteral
+            ) {
+                currentPosition.collacteral = reduceCollacteral;
+                userPositions[positionIndex] = currentPosition;
+                //pay the balance to the trader
+                collacteralToken.transfer(
+                    payable(msg.sender),
+                    reduceCollacteral
+                );
+            }
+        }
+    }
+
     function calculateTotalPNLOfTraders() public view returns (int) {
         uint256 borrowedAssetLong = longOpenAssets; //total borrowed long asset
 
@@ -520,9 +600,8 @@ contract JamoProtocol {
                 pnl =
                     int256(currentValue) -
                     int256(currentPosition.borrowedAmount);
-                    longOpenAssets -= currentPosition.borrowedAmount;
-                    longOpenIntrestInTokens -= currentPosition.tokenSize;
-
+                longOpenAssets -= currentPosition.borrowedAmount;
+                longOpenIntrestInTokens -= currentPosition.tokenSize;
             } else {
                 //shorting here
                 pnl =
@@ -555,7 +634,7 @@ contract JamoProtocol {
                             liquidityMoney
                         );
                         //send money to liquidity pool also
-                    } 
+                    }
                 } else {
                     //negative value of collacteral left. Liquidate the position and nothing back
                     //do longing and shorting here
