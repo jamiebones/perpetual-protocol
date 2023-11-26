@@ -30,6 +30,8 @@ contract JamoProtocol {
     error PositionIndexDoesNotExist();
     error PositionAtSuppliedIndexIsNotOpenedError();
     error PositionNotOpenedError();
+    error CurrentPositionSizeBiggerThanPreviousError();
+    error PositionStillWithinLeverage();
     error CollacteralPositionSizeError(
         uint256 positionSize,
         uint256 collacteral
@@ -221,39 +223,38 @@ contract JamoProtocol {
         if (currentPosition.indexPosition != positionIndex)
             revert PositionIndexDoesNotExist();
         //check if the position is opened
-        uint256 _longOpenAsset;
-        uint256 _longOpenIntrest;
-        uint256 _shortOpenAsset;
-        uint256 _shortOpenIntrest;
         if (currentPosition.positionStatus == PositionStatus.opened) {
+            if (positionSize >= currentPosition.borrowedAmount) {
+                revert CurrentPositionSizeBiggerThanPreviousError();
+            }
             //calculate the PNL of the transaction
             int256 pnl = _calculateTraderPositionPNL(currentPosition);
             int256 pnlAmount = (pnl *
                 int256(positionSize == 0 ? 1 : positionSize)) /
-                int256(positionSize == 0 ? 1 : currentPosition.borrowedAmount); //if user is reducing the size to 0 make provision for that scenario
+                int256(positionSize == 0 ? 1 : currentPosition.borrowedAmount);
+            //if user is reducing the size to 0 make provision for that scenario
             //reduce the global tracking of long and shortIntrest in token
-
             if (currentPosition.isLong) {
-                _longOpenAsset =
+                longOpenAssets =
                     longOpenAssets +
                     positionSize -
                     currentPosition.borrowedAmount;
-                _longOpenIntrest =
+                longOpenIntrestInTokens =
                     longOpenIntrestInTokens +
                     sizeOfToken -
                     currentPosition.tokenSize;
             } else {
-                _shortOpenAsset =
+                shortOpenAssets =
                     shortOpenAssets +
                     positionSize -
                     currentPosition.borrowedAmount;
-                _shortOpenIntrest =
+                shortOpenIntrestInToken =
                     shortOpenIntrestInToken +
                     sizeOfToken -
                     currentPosition.tokenSize;
             }
             if (pnlAmount < 0) {
-                //we have a loss here. How much loss should be deduced
+                //we have a loss here. How much loss should be deducted from the collacteral
                 int256 remainCollacteral = int256(currentPosition.collacteral) +
                     pnlAmount;
                 //check if remain collacteral left is greater than 0
@@ -271,25 +272,7 @@ contract JamoProtocol {
                         currentPosition.collacteral = uint256(
                             remainCollacteral
                         );
-                        //reduce the global long and short
-                        if (currentPosition.isLong) {
-                            _setGlobalTokenSizeForLongAndShort(
-                                _longOpenAsset,
-                                _longOpenIntrest,
-                                0,
-                                0,
-                                true
-                            );
-                        } else {
-                            _setGlobalTokenSizeForLongAndShort(
-                                0,
-                                0,
-                                _shortOpenAsset,
-                                _shortOpenIntrest,
-                                true
-                            );
-                        }
-                        //reduce the position here
+                         //reduce the position here
                         currentPosition.borrowedAmount = positionSize;
                         currentPosition.tokenSize = sizeOfToken;
                         currentPosition.collacteral = uint256(
@@ -301,38 +284,45 @@ contract JamoProtocol {
                             amountToTransferToPool
                         );
                     } else {
-                        //position is liquidated and remaining collacteral sent
-                        liquidatePosition(msg.sender, positionIndex);
+                        //position is liquidated
+                         //loss sent to the liquidiy pool
+                        uint256 amountToTransferToPool = currentPosition
+                            .collacteral - uint256(remainCollacteral);
+                        currentPosition.collacteral = uint256(
+                            remainCollacteral
+                        );
+                        currentPosition.borrowedAmount = positionSize;
+                        currentPosition.tokenSize = sizeOfToken;
+                        currentPosition.positionStatus = PositionStatus
+                            .liquidated;
+                        userPositions[positionIndex] = currentPosition;
+                        collacteralToken.transfer(
+                            _vaultAddress,
+                            amountToTransferToPool
+                        );
+                        //transfer the rest amount to the trader
+                        vault.withdrawTokens(payable(msg.sender), uint256(remainCollacteral));
                     }
                 } else {
                     //whole amount is liquidated here
-                    liquidatePosition(msg.sender, positionIndex);
+                    currentPosition.borrowedAmount = positionSize;
+                    currentPosition.tokenSize = sizeOfToken;
+                    currentPosition.positionStatus = PositionStatus.liquidated;
+                    userPositions[positionIndex] = currentPosition;
+                    collacteralToken.transfer(
+                        _vaultAddress,
+                        currentPosition.collacteral
+                    );
                 }
             } else {
                 //we have a profit here pay back some money to the trader
-                if (currentPosition.isLong) {
-                    _setGlobalTokenSizeForLongAndShort(
-                        _longOpenAsset,
-                        _longOpenIntrest,
-                        0,
-                        0,
-                        true
-                    );
-                } else {
-                    _setGlobalTokenSizeForLongAndShort(
-                        0,
-                        0,
-                        _shortOpenAsset,
-                        _shortOpenIntrest,
-                        true
-                    );
-                }
                 //reduce the position here
                 currentPosition.borrowedAmount = positionSize;
                 currentPosition.tokenSize = sizeOfToken;
                 userPositions[positionIndex] = currentPosition;
                 vault.withdrawTokens(payable(msg.sender), uint256(pnlAmount));
             }
+            //reduce the global values here
         } else {
             revert PositionAtSuppliedIndexIsNotOpenedError();
         }
@@ -465,7 +455,7 @@ contract JamoProtocol {
                     currentPosition.borrowedAmount,
                     currentPosition.collacteral - reduceCollacteral
                 );
-            } 
+            }
             uint256 openIntrestInToken = (reducedPosition *
                 currentPosition.tokenSize) / currentPosition.borrowedAmount;
             if (
@@ -485,7 +475,6 @@ contract JamoProtocol {
                 reducedPosition < currentPosition.borrowedAmount
             ) {
                 //shorting
-                console.log("reduced ", shortOpenAssets, reducedPosition);
                 shortOpenAssets -= reducedPosition;
                 shortOpenIntrestInToken =
                     shortOpenIntrestInToken -
@@ -588,8 +577,22 @@ contract JamoProtocol {
         UserPosition memory currentPosition = userPositions[positionIndex];
         //we are performing the increase here
         //check if the position is opened
+        uint valconsus = currentPosition.borrowedAmount /
+            currentPosition.collacteral;
+        console.log(
+            "max leverage on liquidation => ",
+            valconsus,
+            currentPosition.borrowedAmount,
+            currentPosition.collacteral
+        );
         if (currentPosition.positionStatus == PositionStatus.opened) {
             //calculate the leverage of the position
+            if (
+                currentPosition.borrowedAmount / currentPosition.collacteral >=
+                maxLeverage
+            ) {
+                revert PositionStillWithinLeverage();
+            }
             uint256 currentValue = (uint256(getThePriceOfBTCInUSD()) *
                 currentPosition.tokenSize);
             int256 pnl;
