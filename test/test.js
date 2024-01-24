@@ -220,7 +220,7 @@ describe("JamoProtocol", function () {
       const { traderOne, USDCContract, JamoProtocolContract, PriceFeedContract, VaultContract } = await loadFixture(generalOperationFixture);
       const collacteral = ethers.parseUnits("100", 8);
       const positionSize = ethers.parseUnits("1500", 8);
-      const decreasepositionSize = ethers.parseUnits("1200", 8);
+      const decreasepositionSize = ethers.parseUnits("1499", 8);
       const balBefore = await USDCContract.balanceOf(VaultContract.target);
       //open a short position
       await JamoProtocolContract.connect(traderOne).openPosition(positionSize, collacteral, 2);
